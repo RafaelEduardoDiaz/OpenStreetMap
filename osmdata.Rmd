@@ -1,5 +1,5 @@
 ---
-title: "osmdata"
+title: "osmdata osmdata tutorial"
 author: "Rafael Díaz"
 date: "9/7/2020"
 output: html_document
@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-## Osmdata
+## Introducción a Osmdata
 
 Este tutorial muestra como extraer información de los bancos de un poligono especifico de Bogotá o de todo Bogotá utilizando el paquete   [osmdata](https://github.com/ropensci/osmdata).
 
