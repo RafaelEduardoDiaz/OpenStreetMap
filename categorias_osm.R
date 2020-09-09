@@ -23,8 +23,6 @@ building_cat <- c("apartments","bakehouse", "chapel", "church", "college",
 
 tourism_cat <- 'hotel'
 
-highway_cat <- c("bus_stop","primary")
-
 ## Consulta de todas las cetogrias
 query1 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "amenity",value = amenity_cat) %>% osmdata_sf()
 query2 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "shop",value = shop_cat) %>% osmdata_sf()
@@ -32,6 +30,7 @@ query3 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "leis
 query4 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "building",value = building_cat) %>% osmdata_sf()
 query5 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "tourism",value = tourism_cat) %>% osmdata_sf()
 query6 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "highway",value = "bus_stop") %>% osmdata_sf()
+query7 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "highway",value = "primary") %>% osmdata_sf()
 
 query_cate <- c(query1, query2, query3, query4, query5, query6)
 
@@ -77,8 +76,11 @@ setDT(res_points)
 res_points <- st_sf(distinct(res_points)[order(osm_id, features)][,head(.SD,1), by = osm_id]) 
 colSums(is.na(res_points))
 
+## Agrego las vías principales
+res_vias <- query7$osm_lines[,c("osm_id","name","highway")]%>% mutate(features = highway) %>% select("osm_id", "name", "features")
+
 ## Uno poligonos, con multipoligonos y puntos
-res_query <- bind_rows(res_pol, res_mul_pol, res_points) #38820
+res_query <- bind_rows(res_pol, res_mul_pol, res_points, res_vias) #38820
 res_query <- subset(res_query, !is.na(features)) #38402
 colSums(is.na(res_query))
 
@@ -86,3 +88,21 @@ mapview(res_query)
 
 ## Gurado la base
 saveRDS(object = as.data.table(res_query), file = "osmdata_base.RDS")
+
+rm(list=ls())
+gc(T)
+### open street map
+
+library(sf)
+library(dplyr)
+library(geojsonio)
+library(mapview)
+
+osmdata_base <- readRDS("osmdata_base.RDS")
+osmdata_base <- st_sf(osmdata_base)
+
+osmdata_base_coords <- do.call(rbind, st_geometry(osmdata_base)) %>% as_tibble() %>% setNames(c("lon","lat"))
+
+osm_data <- bind_cols(osmdata_base,osmdata_base_coords) %>% as.data.frame()
+
+osm_data <- osm_data[,c(1:5)]
