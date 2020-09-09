@@ -6,22 +6,26 @@ library(sf)
 library(geojsonsf)
 library(mapview)
 library(data.table)
+library(geojsonio)
 
 ## Categorias
 amenity_cat <- c("atm", "bank", "bar","bicycle_parking","bus_station", "cafe", "clinic", "college", "fast_food", 
              "fuel", "hospital","ice_cream", "marketplace","motorcycle_parking", "Paga Todo", "parking", "payment_centre", 
              "payment_terminal", "pharmacy", "police", "post_office", "restaurant","school","university", "veterinary")
 
-shop_cat <- c("alcohol", "baby_goods", "bakery", "butcher", "convenience","dairy", "de_barrio", "department_store", "food", "funeral_directors","general", 
-          "greengrocer", "grocery", "ice_cream", "kiosk", "mall", "medical_supply","pet","sports", "supermarket")
+shop_cat <- c("alcohol", "baby_goods", "bakery", "butcher", "convenience","dairy","department_store", "food", "funeral_directors",
+              "general", "greengrocer", "grocery", "ice_cream", "kiosk", "mall", "medical_supply","pet","sports", "supermarket")
 
 leisure_cat <- c('fitness_centre','sports_centre')
 
-building_cat <- c("apartments","bakehouse", "chapel", "church", "college", 
-              "commercial", "hospital","hotel", "house", "industrial", "kiosk", "office", 
-              "Oficina Central", "public", "residential", "retail","supermarket", "university","warehouse")
+building_cat <- c("apartments","bakehouse", "chapel", "church", "college","commercial", "hospital","hotel", "house", "industrial", 
+                  "kiosk", "office","Oficina Central", "public", "residential", "retail","supermarket", "university","warehouse")
 
 tourism_cat <- 'hotel'
+
+highway_cat <- c("primary","secondary","trunk")
+
+all_features <- sort(unique(c(amenity_cat, shop_cat, leisure_cat, building_cat, tourism_cat, highway_cat, "bus_stop")))
 
 ## Consulta de todas las cetogrias
 query1 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "amenity",value = amenity_cat) %>% osmdata_sf()
@@ -30,7 +34,7 @@ query3 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "leis
 query4 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "building",value = building_cat) %>% osmdata_sf()
 query5 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "tourism",value = tourism_cat) %>% osmdata_sf()
 query6 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "highway",value = "bus_stop") %>% osmdata_sf()
-query7 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "highway",value = "primary") %>% osmdata_sf()
+query7 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "highway",value = highway_cat) %>% osmdata_sf()
 
 query_cate <- c(query1, query2, query3, query4, query5, query6)
 
@@ -80,29 +84,92 @@ colSums(is.na(res_points))
 res_vias <- query7$osm_lines[,c("osm_id","name","highway")]%>% mutate(features = highway) %>% select("osm_id", "name", "features")
 
 ## Uno poligonos, con multipoligonos y puntos
-res_query <- bind_rows(res_pol, res_mul_pol, res_points, res_vias) #38820
-res_query <- subset(res_query, !is.na(features)) #38402
+res_query <- bind_rows(res_pol, res_mul_pol, res_points, res_vias)
+res_query <- subset(res_query, !is.na(features)) #43818
+res_query <- subset(res_query, features %in% all_features) #43716
+
+`%not_in%` <- Negate(`%in%`)
+res_query <- subset(res_query, features %not_in% highway_cat) #40036
+
 colSums(is.na(res_query))
 
 mapview(res_query)
+sort(unique(res_query$features))
+
 
 ## Gurado la base
-saveRDS(object = as.data.table(res_query), file = "osmdata_base.RDS")
-
+saveRDS(object = as.data.table(res_query), file = "Bases/osmdata_base.RDS")
 rm(list=ls())
 gc(T)
-### open street map
 
-library(sf)
-library(dplyr)
-library(geojsonio)
-library(mapview)
+#=====================================================================================================================================================
 
-osmdata_base <- readRDS("osmdata_base.RDS")
+#----------------------------------------------------------------------#
+#------ Codigo para extraer las coordenadas de un geometry POINT ------#
+#----------------------------------------------------------------------#
+
+## Leo los datos
+osmdata_base <- readRDS("Bases/osmdata_base.RDS"); sort(unique(osmdata_base$features))
 osmdata_base <- st_sf(osmdata_base)
 
+## Extraccion de las coordenadas del objeto geometry
 osmdata_base_coords <- do.call(rbind, st_geometry(osmdata_base)) %>% as_tibble() %>% setNames(c("lon","lat"))
 
-osm_data <- bind_cols(osmdata_base,osmdata_base_coords) %>% as.data.frame()
-
+## Se pegan las coordenas de forma individual
+osm_data <- bind_cols(osmdata_base, osmdata_base_coords) %>% as.data.frame()
 osm_data <- osm_data[,c(1:5)]
+
+#------ Lectura de la subdivisión creada anterior ------#
+pol_100 <- geojson_read("Bases/bogota_subdivi_100.geojson", what = "sp")
+mapview(pol_100)
+
+osm_coord <- data.frame(Longitude = osm_data$lon, Latitude = osm_data$lat, osm_id = osm_data$osm_id)
+
+#------ Alinear coordenadas ------#
+sp::coordinates(osm_coord) <- ~ Longitude + Latitude
+sp::proj4string(osm_coord) <- sp::proj4string(pol_100)
+
+#------ Generar tabla con los puntos encontrados ------#
+poligonos <- sp::over(osm_coord, pol_100)
+colnames(poligonos) <- c("pol_id")
+
+## Se agrega el id del poligono a la osm_data
+osm_data <- bind_cols(osm_data, poligonos)
+
+## Guardo la base final con la asignacion de los poligonos
+saveRDS(object = osm_data, file = "Bases/osm_pol.RDS")
+
+
+#=====================================================================================================================================================
+
+#----------------------------------------------------------------------#
+#------ Se obtienen las vías troncales, principales y secundarias -----#
+#----------------------------------------------------------------------#
+
+## Miro las etiquetas para la característica de vías
+available_tags("highway")
+
+## Realizo el query a la app de overpass
+query7 <- opq(bbox = "Bogota", timeout = 25*100) %>% add_osm_feature(key = "highway",value = c("primary","secondary","trunk")) %>% osmdata_sf()
+res_highway <- query7$osm_lines[,c("osm_id","name","highway")] %>% mutate(features = highway) %>% dplyr::select("osm_id", "name", "features")
+mapview(res_highway)
+
+## Transformo las coordenadas de las vias
+carreteras <-  res_highway %>%
+  st_transform(st_crs("+proj=utm +ellps=GRS80 +datum=WGS84")) %>%
+  st_set_precision(1000000) %>%
+  st_make_valid() # class sf and data.frame
+
+## Transformo las coordenadas de los poligonos
+pol_100 <- st_as_sf(geojson_read("Bases/bogota_subdivi_100.geojson", what = "sp")) %>%
+  st_transform(st_crs("+proj=utm +ellps=GRS80 +datum=WGS84")) %>%
+  st_set_precision(1000000) %>%
+  st_make_valid()
+
+## Realizo el join para ver la interseccion entre las carreteras y los poligonos
+pol_carretera <- sf::st_join( pol_100,carreteras,  left = TRUE, largest = TRUE) %>% as.data.frame() %>% setDT()
+colSums(is.na(pol_carretera))
+pol_carretera_2 <- pol_carretera[!is.na(osm_id)]
+
+## Gurado el resultado final
+saveRDS(pol_carretera_2[,c("ID","features")],"Bases/vias_bogota.RDS")
