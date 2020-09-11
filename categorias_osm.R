@@ -279,8 +279,15 @@ osm_pol <- osm_pol %>% mutate(categoria = case_when(features %in% bares ~ "bares
 osm_dcast <- dcast(data = osm_pol, formula = ID ~ categoria, fun.aggregate = length)
 # mi_pol <- osm_dcast[ID == 4044]; osm_pol[order(categoria)][ID == 4044,.(n = .N), by = categoria]
 # leaflet() %>% addTiles() %>% addCircles(lng = mi_pol$lon, lat = mi_pol$lat, popup = mi_pol$name)
-saveRDS(osm_dcast, "osm_dcast.RDS")
+saveRDS(osm_dcast, "Bases/osm_dcast.RDS")
 
 # https://geoportal.dane.gov.co/servicios/descarga-y-metadatos/descarga-mgn-marco-geoestadistico-nacional/
 
+library(data.table)
+library(dplyr)
+osm_dcast <- as.data.table(readRDS("Bases/osm_dcast.RDS"))
+Final_Todos <- as.data.table(readRDS("Bases/Final_Todos.RDS"))
+
+Final_Todos_OSM <- left_join(x = Final_Todos, y = osm_dcast, by = c("ID_Poly_100"="ID"))
+saveRDS(Final_Todos_OSM, "Bases/Final_Todos_OSM.RDS")
 
