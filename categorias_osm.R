@@ -290,4 +290,3 @@ Final_Todos <- as.data.table(readRDS("Bases/Final_Todos.RDS"))
 
 Final_Todos_OSM <- left_join(x = Final_Todos, y = osm_dcast, by = c("ID_Poly_100"="ID"))
 saveRDS(Final_Todos_OSM, "Bases/Final_Todos_OSM.RDS")
-
